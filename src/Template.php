@@ -26,15 +26,25 @@ class Template
      * @var array
      */
     protected array $config = [
-        'view_path' => '',
-        'cache_path' => '',
-        'cache_time' => 0,
-        'view_suffix' => 'php',
-        'is_code' => false,
+        'view_path' => '', // 视图路径
+        'cache_path' => '', // 缓存路径
+        'cache_time' => 0, // 缓存时间
+        'view_prefix' => 'km-', // 模板变量前缀
+        'view_suffix' => 'php', // 视图文件后缀
     ];
 
     /**
-     * 模板变量替换规则
+     * 表达式替换规则
+     *
+     * @var array
+     */
+    protected array $exprReplace = [
+        ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'heq', 'nheq', 'and', 'or'],
+        ['==', '!=', '>', '>=', '<', '<=', '===', '!==', '&&', '||']
+    ];
+
+    /**
+     * 模板js变量替换规则
      *
      * @var array
      */
@@ -43,8 +53,26 @@ class Template
         'kmNum' => '/kmNum\(([^\)]+)\)/',
         'kmVar' => '/kmVar\(([^\)]+)\)/',
         'kmBool' => '/kmBool\(([^\)]+)\)/',
-        'kmJson' => '/kmJson\(([^\)]+)\)/',
-        'kmInclude' => '/kmInclude\(([^\)]+)\)/',
+        'kmJson' => '/kmJson\(([^\)]+)\)/'
+    ];
+
+    /**
+     * 模板模板标签规则
+     *
+     * @var array
+     */
+    protected array $tplTags = [
+        'kmIf' => '/\{\#if\s+([^\}]+)\}/',
+        'kmElseIf' => '/\{\#else\s+if\s+([^\}]+)\}/',
+        'kmElse' => '/\{\#else\}/',
+        'kmEndIf' => '/\{\/if\}/',
+        'kmFor' => '/\{\#for\s+([^\}]+)\}/',
+        'kmEndFor' => '/\{\/for\}/',
+        'kmEach' => '/\{\#each\s+([^\}]+)\s+as\s+([^\}]+)\}/',
+        'kmEndEach' => '/\{\/each\}/',
+        'kmVal' => '/\{\{([^\}]+)\}\}/',
+        'kmHtml' => '/\{\#html\s+([^\}]+)\}/',
+        'kmEvent' => '/\@([a-z]+)="([\w$]+)"/'
     ];
 
     /**
@@ -61,7 +89,6 @@ class Template
                 $this->config[$path] .= DIRECTORY_SEPARATOR;
             }
         }
-
         // 创建缓存目录（如果不存在）
         if (!empty($this->config['cache_path']) && !is_dir($this->config['cache_path'])) {
             mkdir($this->config['cache_path'], 0755, true);
@@ -81,7 +108,19 @@ class Template
     }
 
     /**
-     * 解析模板变量
+     * 替换表达式符号
+     *
+     * @param string $string 字符串
+     * @return string 字符串
+     */
+    protected function replaceExpr(string $string): string
+    {
+        $str = str_replace($this->exprReplace[0], $this->exprReplace[1], $string);
+        return $str;
+    }
+
+    /**
+     * 解析js模板变量
      *
      * @param string $tpl 模板内容
      * @return string 解析后的内容
@@ -95,32 +134,76 @@ class Template
     }
 
     /**
-     * 解析模板
+     * 解析模板标签
      *
-     * @param string $tpl
-     * @return string
+     * @param string $tpl 模板内容
+     * @return string 解析后的内容
      */
-    protected function parseTpl(string $tpl): string
+    protected function parseTags(string $tpl): string
     {
-        $dom = HTMLDocument::createFromString($tpl, LIBXML_NOERROR);
-        $js = $dom->querySelector('script')->innerHTML;
-        return $js;
+        foreach ($this->tplTags as $key => $pattern) {
+            $tpl = preg_replace_callback($pattern, [$this, $key], $tpl);
+        }
+        $tpl = str_replace("/", "\/", $tpl);
+        return $tpl;
     }
 
     /**
-     * 解析入口模板
+     * 解析模板
      *
-     * @param string $content 模板内容
-     * @return string 解析后的内容
+     * @param string $tplFile 模板文件路径
+     * @return string
      */
-    protected function parseMain(string $content): string
+    protected function parseTpl(string $tplFile): string
     {
-        $mainFile = $this->config['view_path'] . 'main.' . $this->config['view_suffix'];
-        if (file_exists($mainFile)) {
-            $mainContent = file_get_contents($this->config['view_path'] . 'main.' . $this->config['view_suffix']);
-            $content = str_replace('kmContent()', $content, $mainContent);
+        // 模板内容
+        $tpl = file_get_contents($tplFile);
+        // 获取模板文件名
+        $filename = pathinfo($tplFile, PATHINFO_FILENAME);
+        // 解析模板文件
+        $dom = HTMLDocument::createFromString($tpl, LIBXML_NOERROR);
+        $template = $dom->querySelector('template')->innerHTML; // 获取模板内容
+        $template = $this->parseTags($template); // 解析模板标签
+        $style = $dom->querySelector('style')->innerHTML; // 获取样式内容
+        $js = $dom->querySelector('script')->innerHTML; // 获取脚本内容
+        // 解析脚本内容
+        $varName = str_replace("-", "_", $this->config['view_prefix']) . $filename;
+        $js = $this->parseVars($js); // 解析模板变量
+        $js = preg_replace(
+            '/\s*export\s+default\s+function\(\)\s+{/',
+            "\nconst {$varName} = function () {
+    this.css = function() { return `{$style}`; }
+    this.render = function() { let kmTpl = `{$template}`; return kmTpl;}",
+            $js
+        );
+        // 实例化
+        $js .= "regComp('{$this->config['view_prefix']}{$filename}', {$varName});";
+        // 判断入口模板文件是否存在
+        if (file_exists($this->config['view_path'] . 'main.' . $this->config['view_suffix'])) {
+            // 入口模板文件
+            $mainFile = file_get_contents($this->config['view_path'] . 'main.' . $this->config['view_suffix']);
+            // 解析入口模板文件
+            $main = HTMLDocument::createFromString($mainFile, LIBXML_NOERROR);
+            // 检查是否存在kmin.js
+            $kminJs = $main->querySelectorAll('script[src="/kmin/kmin.js"]');
+            if ($kminJs->length < 0) { // 不存在kmin.js就添加
+                $kminJs = $main->createElement('script');
+                $kminJs->setAttribute('src', '/kmin/kmin.js');
+                $main->querySelector('head')->appendChild($kminJs);
+            }
+            // 添加模板标签到入口模板文件
+            $viewTag = $main->createElement("{$this->config['view_prefix']}{$filename}");
+            $main->querySelector('body')->appendChild($viewTag);
+            // 添加脚本标签到入口模板文件
+            $view = $main->createElement('script');
+            $view->setAttribute('type', 'module');
+            $view->innerHTML = $js;
+            $main->querySelector('body')->appendChild($view);
+            // 返回解析后的入口模板文件内容
+            return $main->saveHTML();
+        } else {
+            return $js;
         }
-        return $content;
     }
 
     /**
@@ -137,7 +220,6 @@ class Template
         }
         // 模板文件路径
         $tplFile  = $this->config['view_path'] . $template . '.' . $this->config['view_suffix'];
-
         if (!file_exists($tplFile)) {
             throw new Exception('The template file does not exist:' . $tplFile);
         }
@@ -145,15 +227,8 @@ class Template
         $cacheFile = $this->config['cache_path'] . md5($template) . '.php';
         // 检查是否需要重新编译模板
         if (!$this->isCacheValid($cacheFile, $tplFile)) {
-            $content = file_get_contents($tplFile);
-            if ($this->config['is_code']) { // 如果是代码模板，需要解析模板
-                $content = $this->parseTpl($content);
-            } else {
-                // 模板布局
-                $content = $this->parseMain($content);
-            }
-            $compiled = $this->parseVars($content);
-            file_put_contents($cacheFile, $compiled);
+            $content = $this->parseTpl($tplFile);
+            file_put_contents($cacheFile, $content);
         }
         extract($this->data, EXTR_SKIP);
         ob_start();
@@ -188,16 +263,62 @@ class Template
 
     protected function kmJson($matches)
     {
-        return "JSON.parse(<?php echo json_encode({$matches[1]}, JSON_UNESCAPED_UNICODE); ?>)";
+        return "JSON.parse('<?php echo json_encode({$matches[1]}, JSON_UNESCAPED_UNICODE); ?>')";
     }
 
-    protected function kmInclude($matches)
+    protected function kmIf($matches)
     {
-        $file = $this->config['view_path'] . $matches[1] . '.' . $this->config['view_suffix'];
-        if (!file_exists($file)) {
-            throw new Exception('The template file does not exist:' . $file);
-        }
-        return "<?php include '{$file}'; ?>";
+        return "`;if(" . $this->replaceExpr($matches[1]) . "){`{kmTpl+=`";
+    }
+
+    protected function kmElseIf($matches)
+    {
+        return "`;}else if(" . $this->replaceExpr($matches[1]) . "){`{kmTpl+=`";
+    }
+
+    protected function kmElse()
+    {
+        return "`;}else{`{kmTpl+=`";
+    }
+
+    protected function kmEndIf()
+    {
+        return "`;}kmTpl+=`";
+    }
+
+    protected function kmFor($matches)
+    {
+        return "`;for(" . $this->replaceExpr($matches[1]) . ") {kmTpl+=`";
+    }
+
+    protected function kmEndFor()
+    {
+        return "`;}kmTpl+=`";
+    }
+
+    protected function kmEach($matches)
+    {
+        return "`;" . $matches[1] . ".forEach((" . $matches[2] . ") => {kmTpl+=`";
+    }
+
+    protected function kmEndEach()
+    {
+        return "`;});kmTpl+=`";
+    }
+
+    protected function kmVal($matches)
+    {
+        return "\${this.kmHtml(" . $matches[1] . ")}";
+    }
+
+    protected function kmHtml($matches)
+    {
+        return "\${this.kmHtml(" . $matches[1] . ",false)}";
+    }
+
+    protected function kmEvent($matches)
+    {
+        return 'data-event="' . $matches[1] . ',' . $matches[2] . '"';
     }
 
     /**
