@@ -167,7 +167,7 @@ class Template
         $style = $dom->querySelector('style')->innerHTML; // 获取样式内容
         $js = $dom->querySelector('script')->innerHTML; // 获取脚本内容
         // 解析脚本内容
-        $varName = str_replace("-", "_", $this->config['view_prefix']) . $filename;
+        $varName = str_replace("-", "_", $this->config['view_prefix'] . $filename);
         $js = $this->parseVars($js); // 解析模板变量
         $js = preg_replace(
             '/\s*export\s+default\s+function\(\)\s+{/',
