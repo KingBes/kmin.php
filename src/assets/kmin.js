@@ -16,6 +16,9 @@ export function regComp(tagName, comp) {
                 constructor() {
                     super();
                     comp.call(this);
+                    for (const attr of this.attributes) {
+                        this.attred(attr.name, undefined, attr.value);
+                    }
                 }
             }
         );
@@ -37,10 +40,22 @@ export async function impComp(url) {
  * 自定义组件
  */
 export class KMin extends HTMLElement {
-
-    // 组件版本号
-    static version = 'v0.0.6';
-
+    obServerAttr = new MutationObserver((mutationsList) => {
+        // 遍历所有变化记录
+        for (const mutation of mutationsList) {
+            // 仅处理属性变化（过滤其他类型的 DOM 变化）
+            if (mutation.type === 'attributes') {
+                const {
+                    target: el, // 发生变化的元素
+                    attributeName, // 变化的属性名（如 class、id、data-info）
+                    oldValue, // 变化前的旧值（需开启 attributeOldValue: true）
+                } = mutation;
+                // 获取变化后的新值
+                const newValue = el.getAttribute(attributeName);
+                this.attred(attributeName, oldValue, newValue);
+            }
+        }
+    })
     /**
      * 自定义元素的构造函数
      */
@@ -50,6 +65,10 @@ export class KMin extends HTMLElement {
         // 创建一个 Shadow DOM
         this.attachShadow({ mode: "open" });
         this.eventListeners = []; // 事件存储器
+        this.obServerAttr.observe(this, {
+            attributes: true, // 观察属性变化
+            attributeOldValue: true, // 记录属性变化前的旧值
+        });
     }
 
     /**
@@ -141,6 +160,7 @@ export class KMin extends HTMLElement {
                 type: data[0],
                 handler: data[1]
             })
+
             element.addEventListener(data[0], (e) => {
                 if (this[data[1]]) {
                     this[data[1]].call(this, e, element);
@@ -287,9 +307,6 @@ export class KMin extends HTMLElement {
     disconnectedCallback() {
         this.cleaned();
     } // 自定义元素从页面中移除时调用
-    attributeChangedCallback(name, oldValue, newValue) {
-        this.attred(name, oldValue, newValue);
-    } // 自定义元素的属性变更时调用
 }
 
 /**
