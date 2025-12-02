@@ -83,7 +83,7 @@ export class KMin extends HTMLElement {
             get(target, key, rec) {
                 const vars = Reflect.get(target, key, rec);
                 if (typeof vars === 'object' && vars !== null) {
-                    return then.state(vars);
+                    return then.reactive(vars);
                 }
                 return vars;
             },
