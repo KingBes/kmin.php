@@ -158,11 +158,18 @@ class Template
     {
         // 模板内容
         $tpl = file_get_contents($tplFile);
+        if (preg_match(
+            '/^\s*<template>.*?<\/template>\s*<script>.*?<\/script>\s*<style>.*?<\/style>\s*$/s',
+            $tpl
+        ) === false) {
+            throw new \Exception("模板文件格式错误,必须是<template><script><style>标签包裹的内容");
+        }
         // 获取模板文件名
         $filename = pathinfo($tplFile, PATHINFO_FILENAME);
         // 解析模板文件
         $dom = HTMLDocument::createFromString($tpl, LIBXML_NOERROR);
-        $template = $dom->querySelector('template')->innerHTML; // 获取模板内容
+        preg_match('/<template\b[^>]*>(.*?)<\/template>/is', $tpl, $matches);
+        $template = $matches[1]; // 获取模板内容
         $template = $this->parseTags($template); // 解析模板标签
         $style = $dom->querySelector('style')->innerHTML; // 获取样式内容
         $js = $dom->querySelector('script')->innerHTML; // 获取脚本内容
@@ -268,17 +275,17 @@ class Template
 
     protected function kmIf($matches)
     {
-        return "`;if(" . $this->replaceExpr($matches[1]) . "){`{kmTpl+=`";
+        return "`;if(" . $this->replaceExpr($matches[1]) . "){kmTpl+=`";
     }
 
     protected function kmElseIf($matches)
     {
-        return "`;}else if(" . $this->replaceExpr($matches[1]) . "){`{kmTpl+=`";
+        return "`;}else if(" . $this->replaceExpr($matches[1]) . "){kmTpl+=`";
     }
 
     protected function kmElse()
     {
-        return "`;}else{`{kmTpl+=`";
+        return "`;}else{kmTpl+=`";
     }
 
     protected function kmEndIf()
