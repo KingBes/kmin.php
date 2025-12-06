@@ -72,7 +72,8 @@ class Template
         'kmEndEach' => '/\{\/each\}/',
         'kmVal' => '/\{\{([^\}]+)\}\}/',
         'kmHtml' => '/\{\#html\s+([^\}]+)\}/',
-        'kmEvent' => '/\@([a-z]+)="([\w$]+)"/'
+        'kmEvent' => '/\@([a-z]+)="([\w$]+)"/',
+        'kmAttr' => '/\:([a-z]+)="([^\"]+)"/'
     ];
 
     /**
@@ -326,6 +327,11 @@ class Template
     protected function kmEvent($matches)
     {
         return 'data-event="' . $matches[1] . ',' . $matches[2] . '"';
+    }
+
+    protected function kmAttr($matches)
+    {
+        return $matches[1] . "='\${this.kmJson(" . $matches[2] . ")}'";
     }
 
     /**

@@ -17,7 +17,22 @@ export function regComp(tagName, comp) {
                     super();
                     comp.call(this);
                     for (const attr of this.attributes) {
-                        this.attred(attr.name, undefined, attr.value);
+                        let value = attr.value;
+                        // 判断开头是否为attr##
+                        if (value.startsWith("attr##")) {
+                            value = value.replace("attr##", "");
+                            if (typeof attr.value === 'undefined') {
+                                value = undefined
+                            }
+                            try {
+                                value = JSON.parse(value);
+                            } catch (error) {
+                                value = value;
+                            }
+                        } else {
+                            value = value;
+                        }
+                        this.attred(attr.name, undefined, value);
                     }
                 }
             }
@@ -45,14 +60,14 @@ export class KMin extends HTMLElement {
         for (const mutation of mutationsList) {
             // 仅处理属性变化（过滤其他类型的 DOM 变化）
             if (mutation.type === 'attributes') {
-                const {
+                let {
                     target: el, // 发生变化的元素
                     attributeName, // 变化的属性名（如 class、id、data-info）
                     oldValue, // 变化前的旧值（需开启 attributeOldValue: true）
                 } = mutation;
                 // 获取变化后的新值
-                const newValue = el.getAttribute(attributeName);
-                this.attred(attributeName, oldValue, newValue);
+                let newValue = el.getAttribute(attributeName);
+                this.attred(attributeName, this.kmParse(oldValue), this.kmParse(newValue));
             }
         }
     })
@@ -280,6 +295,51 @@ export class KMin extends HTMLElement {
         // 快速检查是否需要转义
         if (!escapePattern.test(str)) return str;
         return str.replace(escapePattern, char => escapeMap[char]);
+    }
+
+    /**
+     * 转换为JSON字符串
+     * 
+     * @param {any} input 输入值
+     * @returns {string} JSON字符串
+     */
+    kmJson(input) {
+        if (typeof input === 'undefined') return "undefined"
+        return "attr##" + JSON.stringify(input);
+    }
+
+    /**
+     * 解析JSON字符串
+     * 
+     * @param {string} input JSON字符串
+     * @returns {any} 解析后的对象
+     */
+    kmParse(input) {
+        // 判断开头是否为attr##
+        if (input.startsWith("attr##")) {
+            input = input.replace("attr##", "");
+        } else {
+            return input;
+        }
+        if (typeof input === 'undefined') return undefined
+        try {
+            const res = JSON.parse(input);
+            return res;
+        } catch (error) {
+            return input;
+        }
+    }
+
+    /**
+     * 事件绑定
+     * 
+     * @param {string} name 事件名称
+     * @param {function|string} fn 事件处理函数
+     * @returns {string} 事件字符串
+     */
+    kmEvent(name, fn) {
+        if (typeof fn === 'function') fn = fn.name;
+        return ` data-event="${name},${fn}" `
     }
 
     css() { return ''; } // 定义样式
