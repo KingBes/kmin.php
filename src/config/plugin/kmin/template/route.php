@@ -33,25 +33,6 @@ if (config("plugin.kmin.template.app.enable")) {
     });
 
     foreach (config("plugin.kmin.template.app.component") as $key => $value) {
-        Route::any("$key/{path:.+}", function ($request, string $path) use ($value) {
-            $file = $value . DIRECTORY_SEPARATOR . $path;
-            if (file_exists($file) && pathinfo($file, PATHINFO_EXTENSION) == "php") {
-                $options = [
-                    'view_path' => $value,
-                    'cache_path' => runtime_path() . '/views/component/',
-                    'view_suffix' => 'php',
-                ];
-                $views = new Template($options);
-                if (isset(request()->_view_vars)) {
-                    $vars = (array)request()->_view_vars;
-                } else {
-                    $vars = [];
-                }
-                $template = $views->fetch(str_replace(".php", "", $path), $vars);
-                return response($template, 200, ['Content-Type' => 'text/javascript']);
-            } else {
-                return response('404 Not Found', 404);
-            }
-        });
+        km_component($key, $value);
     }
 }
